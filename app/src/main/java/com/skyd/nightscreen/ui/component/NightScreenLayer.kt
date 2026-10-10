@@ -39,6 +39,8 @@ fun showNightScreen() {
     if (showNightScreenLayer) return
     if (XXPermissions.isGranted(appContext, Permission.SYSTEM_ALERT_WINDOW)) {
         showNightScreenLayer = true
+        // 显示前按当前屏幕方向刷新尺寸：横屏启动时若沿用竖屏尺寸，遮罩只能盖住一半屏幕
+        layerView.updateSize()
         layerView.visible()
         if (getLowestScreenBrightness() && !getActualLowestScreenBrightness()) {
             applyScreenBrightness(true)

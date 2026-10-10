@@ -10,3 +10,6 @@
 local.properties
 /secret.gradle
 /key.jks
+
+# 本地开发辅助目录（笔记、构建日志、调试截图）
+.workbuddy/

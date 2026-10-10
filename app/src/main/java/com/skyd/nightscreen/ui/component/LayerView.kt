@@ -41,6 +41,22 @@ class LayerView(context: Context) : View(context) {
 
     private var bgColor = Color.TRANSPARENT
 
+    /**
+     * 按当前屏幕方向重新计算遮罩尺寸，并同步给 WindowManager。
+     *
+     * 已添加到 WindowManager 的窗口不会随屏幕旋转自动改变宽高，
+     * 如果继续沿用竖屏时的尺寸，横屏下遮罩就只能盖住屏幕的一部分，
+     * 所以旋转屏幕或显示遮罩前都要刷新一次尺寸。
+     */
+    fun updateSize() {
+        layoutParams.width = context.screenWidth
+        layoutParams.height = context.screenHeight
+        if (isAttachedToWindow) {
+            (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+                .updateViewLayout(this, layoutParams)
+        }
+    }
+
     fun updateColor(color: Int) {
         ObjectAnimator.ofInt(this, "backgroundColor", bgColor, color).apply {
             setEvaluator(ArgbEvaluator())
