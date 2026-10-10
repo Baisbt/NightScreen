@@ -3,11 +3,11 @@
     <string name="app_name">nacti viska</string>
     <string name="warning">cizra</string>
     <string name="cancel">nai catlu</string>
-    <string name="ok">mo'u co'u</string>
+    <string name="ok">mo\'u co\'u</string>
     <string name="back">terdi</string>
     <string name="run_night_screen">jundi</string>
     <string name="settings">terdi se fanmo</string>
-    <string name="about">coi fa'o</string>
+    <string name="about">coi fa\'o</string>
     <string name="change_light">lumci ckule</string>
     <string name="power_off">nai muvdu</string>
     <string name="settings_screen_choice_a_color">selci lo terdi xabju se nitcu</string>
@@ -18,8 +18,8 @@
     <string name="alpha_dialog_title">alpha</string>
     <string name="color_dialog_title">colta</string>
     <string name="settings_screen_screen_settings">viska</string>
-    <string name="settings_screen_keep_screen_on">cinri le viska ca'o muvdu</string>
-    <string name="settings_screen_keep_screen_on_description">cinri le viska ca'o muvdu ca le nacti viska cu muvdu</string>
+    <string name="settings_screen_keep_screen_on">cinri le viska ca\'o muvdu</string>
+    <string name="settings_screen_keep_screen_on_description">cinri le viska ca\'o muvdu ca le nacti viska cu muvdu</string>
     <string name="about_screen_goto_github_repo">GitHub</string>
     <string name="about_screen_join_discord">Discord</string>
     <string name="about_screen_join_telegram">Telegram</string>
@@ -52,5 +52,5 @@
     <string name="settings_screen_scheduled_task_settings">se fanmo nu lo nu se catlu</string>
     <string name="settings_screen_schedule_task_start_time">sanji lo nu bartu</string>
     <string name="settings_screen_schedule_task_stop_time">tordu lo nu cerno</string>
-    <string name="settings_screen_schedule_task_auto_run">muvdu ca'o se fanmo</string>
+    <string name="settings_screen_schedule_task_auto_run">muvdu ca\'o se fanmo</string>
 </resources>
