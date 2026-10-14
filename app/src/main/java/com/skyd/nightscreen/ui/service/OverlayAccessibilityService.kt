@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.provider.Settings
+import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.skyd.nightscreen.BuildConfig
@@ -35,24 +36,50 @@ class OverlayAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
-        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        super.onServiceConnected()
+        attachLayer()
+        registerDisplayListener()
+    }
 
-        // 服务可能在同一进程内被系统重新绑定（旋转屏幕、重新绑定、进程存活时被重启等），
-        // 而 layerView 是进程级单例，此时它仍挂在 WindowManager 上，直接 addView 会抛：
-        //   IllegalStateException: View ... has already been added to the window manager
-        // 并导致该服务崩溃、遮罩彻底失效，所以先摘干净再加。
-        if (layerView.isAttachedToWindow) {
-            windowManager.removeViewImmediate(layerView)
-        }
-
-        layerView.updateSize()
-        windowManager.addView(layerView, layerView.layoutParams)
-
-        (getSystemService(DISPLAY_SERVICE) as DisplayManager).apply {
+    private fun registerDisplayListener() {
+        (getSystemService(DISPLAY_SERVICE) as? DisplayManager)?.apply {
             // 重复注册会抛异常，先反注册一次（未注册时是无副作用的）
             unregisterDisplayListener(displayListener)
             registerDisplayListener(displayListener, null)
         }
+    }
+
+    /**
+     * 把遮罩窗口挂到 WindowManager 上。
+     *
+     * 这里有两个必须处理的坑，否则服务会崩溃并被系统标记为 crashed，
+     * 表现出来就是「无障碍权限失效 / 每次都要重新授权」：
+     *
+     * 1. layerView 是进程级单例，服务在「进程存活」的情况下被重新绑定时（用户在设置里关开、
+     *    ROM 重启服务、系统手势后重新绑定等），它可能仍挂在 WindowManager 上，
+     *    直接 addView 会抛 IllegalStateException: has already been added to the window manager。
+     *    所以先摘干净。
+     *
+     * 2. AccessibilityService 的 WindowManager 会在首次 addView 时把本次连接的 token
+     *    写进 LayoutParams.token（WindowManagerImpl.applyDefaultToken）。因为复用的是同一个
+     *    LayoutParams 对象，第二次连接时里面还留着上一次连接的、已经失效的 Binder，
+     *    于是 addView 抛 BadTokenException: token ... is not valid。
+     *    所以每次 addView 之前必须先把 token 清空，让框架填入本次连接的新 token。
+     */
+    private fun attachLayer() {
+        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        if (layerView.isAttachedToWindow) {
+            runCatching { windowManager.removeViewImmediate(layerView) }
+                .onFailure { Log.w(TAG, "移除旧遮罩窗口失败，继续尝试重新添加", it) }
+        }
+
+        // 关键修复：丢弃上一次连接留下的窗口 token
+        layerView.resetWindowToken()
+        layerView.updateSize()
+
+        runCatching { windowManager.addView(layerView, layerView.layoutParams) }
+            .onFailure { Log.e(TAG, "添加遮罩窗口失败", it) }
     }
 
     override fun onDestroy() {
@@ -66,8 +93,13 @@ class OverlayAccessibilityService : AccessibilityService() {
         // 服务结束时把遮罩窗口摘掉，避免下次 onServiceConnected 重复添加
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         if (layerView.isAttachedToWindow) {
-            windowManager.removeViewImmediate(layerView)
+            runCatching { windowManager.removeViewImmediate(layerView) }
+                .onFailure { Log.w(TAG, "移除遮罩窗口失败", it) }
         }
+    }
+
+    private companion object {
+        const val TAG = "OverlayAccessibilityService"
     }
 }
 

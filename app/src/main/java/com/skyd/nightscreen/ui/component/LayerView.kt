@@ -42,6 +42,21 @@ class LayerView(context: Context) : View(context) {
     private var bgColor = Color.TRANSPARENT
 
     /**
+     * 清空窗口 token，必须在每次 addView 之前调用。
+     *
+     * AccessibilityService 的 WindowManager 会把「当前这次连接」的 token 通过
+     * WindowManagerImpl.applyDefaultToken() 写入 LayoutParams.token（写入时机是首次 addView）。
+     * 而 layerView 是进程级单例，复用同一个 LayoutParams：
+     * 服务被关闭再打开（或崩溃后被系统重启）时，token 仍是上一次连接的 Binder，
+     * 此时 addView 会抛 BadTokenException（token ... is not valid）并把服务打成 crashed 状态，
+     * 表现为「无障碍权限莫名其妙失效、每次都要重新授权」。
+     * 置空后 WindowManager 会自动填入本次连接的新 token。
+     */
+    fun resetWindowToken() {
+        layoutParams.token = null
+    }
+
+    /**
      * 按当前屏幕方向重新计算遮罩尺寸，并同步给 WindowManager。
      *
      * 已添加到 WindowManager 的窗口不会随屏幕旋转自动改变宽高，
