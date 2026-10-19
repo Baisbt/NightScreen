@@ -37,10 +37,18 @@ fun getNightScreenDialog(c: Context? = null): AlertDialog {
         false
     )
 
+    // 对话框窗口默认 Gravity.CENTER，正好压在屏幕正中间——也就是遮罩下最想看清的地方。
+    // 往上挪一段（负的 y 在 CENTER 下表示向上偏移），让它的中心落在屏幕高度约 1/3 处：
+    // 水平方向仍然居中，但不再挡住画面主体。
+    val verticalOffset = context.resources.displayMetrics.heightPixels / 5
+
     val dialog = MaterialAlertDialogBuilder(context)
         .setView(view)
         .create().apply {
-            window?.attributes?.dimAmount = 0f
+            window?.attributes?.let {
+                it.dimAmount = 0f
+                it.y = -verticalOffset
+            }
         }.apply {
             setOnShowListener {
                 dialogIsShowing = true
