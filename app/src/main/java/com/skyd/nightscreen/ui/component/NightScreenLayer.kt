@@ -2,6 +2,8 @@ package com.skyd.nightscreen.ui.component
 
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
@@ -56,24 +58,12 @@ fun showNightScreen() {
         layerView.updateSize()
         layerView.visible()
         if (!layerView.isAttachedToWindow) {
-            // 无障碍服务没连上时遮罩根本画不出来，只调 visibility 是静默无效的。
-            if (!isAccessibilityServiceConnected()) {
-                // 服务掉线了（被 ROM 清理后系统不会自动重绑）。有 WRITE_SECURE_SETTINGS 就自己修：
-                // 重写一次服务列表让系统重新绑定，绑定成功后 onServiceConnected 会按
-                // nightScreenRequested 把遮罩挂上，用户不需要再点一次。
-                if (AccessibilityGuard.canRestore()) {
-                    Log.i(TAG, "无障碍服务未连接，尝试自动恢复")
-                    appContext.getString(R.string.reconnecting_accessibility_service).showToast()
-                    AccessibilityGuard.restore()
-                } else {
-                    Log.w(TAG, "无障碍服务未连接且无自愈权限，引导用户手动关开")
-                    appContext.getString(R.string.accessibility_service_not_running).showToast()
-                    AccessibilityGuard.openAccessibilitySettings()
-                }
-            } else {
-                // 服务连着、窗口只是还没挂好，属于瞬时状态，不打扰用户
-                Log.w(TAG, "遮罩视图未挂到窗口上")
-            }
+            // 遮罩画不出来，说明无障碍服务还没连上。
+            // 但进程刚启动时服务绑定需要几百毫秒，此刻就判定「坏了」并弹提示属于误报；
+            // 而且重写无障碍列表会让所有无障碍服务一起重绑，更是误伤。
+            // 所以这里先静默等一会儿：服务自己连上的话，onServiceConnected 会把遮罩挂上。
+            Log.i(TAG, "遮罩视图尚未挂载，稍后复查无障碍服务")
+            scheduleConnectionCheck()
         }
         if (getLowestScreenBrightness() && !getActualLowestScreenBrightness()) {
             applyScreenBrightness(true)
@@ -86,6 +76,45 @@ fun showNightScreen() {
         )
         NightScreenReceiver.sendBroadcast(action = NightScreenReceiver.SHOW_NOTIFICATION_ACTION)
     }
+}
+
+private const val CONNECTION_CHECK_DELAY_MS = 2000L
+private const val CONNECTION_VERIFY_DELAY_MS = 2500L
+
+private var connectionCheckScheduled = false
+
+/**
+ * 延后复查无障碍服务是否已经连上。
+ *
+ * 只有「确实连不上」才动作：能自愈就静默自愈，不能自愈才提示用户。
+ * 正常启动（服务只是绑定得慢一点）不会弹任何东西，遮罩会自己出现。
+ */
+private fun scheduleConnectionCheck() {
+    if (connectionCheckScheduled) return
+    connectionCheckScheduled = true
+    Handler(Looper.getMainLooper()).postDelayed({
+        connectionCheckScheduled = false
+        if (isAccessibilityServiceConnected()) return@postDelayed
+        if (AccessibilityGuard.canRestore()) {
+            Log.i(TAG, "无障碍服务仍未连接，尝试自动恢复")
+            AccessibilityGuard.restore { verifyRestored() }
+        } else {
+            promptAccessibilityLost()
+        }
+    }, CONNECTION_CHECK_DELAY_MS)
+}
+
+private fun verifyRestored() {
+    Handler(Looper.getMainLooper()).postDelayed({
+        if (!isAccessibilityServiceConnected()) promptAccessibilityLost()
+    }, CONNECTION_VERIFY_DELAY_MS)
+}
+
+/** 自愈也救不回来才打扰用户：说明这次真的需要他手动关开一次。 */
+private fun promptAccessibilityLost() {
+    Log.w(TAG, "无障碍服务仍未连接，引导用户手动关开")
+    appContext.getString(R.string.accessibility_service_not_running).showToast()
+    AccessibilityGuard.openAccessibilitySettings()
 }
 
 fun closeNightScreen() {
