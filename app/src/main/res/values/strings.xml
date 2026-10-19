@@ -5,6 +5,8 @@
     <string name="ok">OK</string>
     <string name="back">Back</string>
     <string name="run_night_screen">Run</string>
+    <string name="auto_start_on_launch">Auto start</string>
+    <string name="auto_start_on_launch_description">Turn on the night screen every time you open the app</string>
     <string name="settings">Settings</string>
     <string name="about">About</string>
     <string name="change_light">Brightness</string>

@@ -6,6 +6,8 @@
     <string name="ok">mo\'u co\'u</string>
     <string name="back">terdi</string>
     <string name="run_night_screen">jundi</string>
+    <string name="auto_start_on_launch">Auto start</string>
+    <string name="auto_start_on_launch_description">Turn on the night screen every time you open the app</string>
     <string name="settings">terdi se fanmo</string>
     <string name="about">coi fa\'o</string>
     <string name="change_light">lumci ckule</string>

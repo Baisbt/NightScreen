@@ -27,6 +27,9 @@ import com.skyd.nightscreen.ext.requestAllPermissionsAndShow
 import com.skyd.nightscreen.ext.requestSystemAlertWindowPermission
 import com.skyd.nightscreen.ext.sharedPreferences
 import com.skyd.nightscreen.ui.NightScreenReceiver
+import com.skyd.nightscreen.ui.component.autoNightScreenOnLaunch
+import com.skyd.nightscreen.ui.component.showDialogAndNightScreen
+import com.skyd.nightscreen.ui.component.showNightScreenLayer
 import com.skyd.nightscreen.ui.component.showToast
 import com.skyd.nightscreen.ui.local.LocalNavController
 import com.skyd.nightscreen.ui.screen.about.ABOUT_SCREEN_ROUTE
@@ -47,6 +50,9 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : BaseComposeActivity() {
     companion object {
         const val REQUEST_PERMISSION_AND_SHOW_ACTION = "requestPermissionsAndShow"
+
+        /** 等首页首帧画出来再自动开遮罩，避免遮罩抢在界面前面出现。 */
+        private const val AUTO_START_DELAY_MS = 250L
     }
 
     private lateinit var navController: NavController
@@ -111,6 +117,30 @@ class MainActivity : BaseComposeActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         doIntentAction(intent?.action)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        autoStartNightScreenIfNeeded()
+    }
+
+    /**
+     * 「启动时自动开启」：回到前台时如果遮罩还没开，就自动打开。
+     *
+     * 延后一点再执行，是为了让首页先画出来：冷启动时如果和首帧同步跑，
+     * 用户会看到遮罩先盖上来、界面后出现，像闪了一下。
+     * 已经在开启状态时不重复执行，所以在应用内来回切页不会反复触发。
+     */
+    private fun autoStartNightScreenIfNeeded() {
+        if (!autoNightScreenOnLaunch) return
+        if (showNightScreenLayer) return
+        if (!isAccessibilityServiceRunning(this)) return
+        window.decorView.postDelayed({
+            if (!autoNightScreenOnLaunch) return@postDelayed
+            if (showNightScreenLayer) return@postDelayed
+            if (!isAccessibilityServiceRunning(this)) return@postDelayed
+            showDialogAndNightScreen()
+        }, AUTO_START_DELAY_MS)
     }
 
     private fun doIntentAction(action: String?) {

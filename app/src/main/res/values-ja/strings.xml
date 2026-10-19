@@ -6,6 +6,8 @@
   <string name="ok">OK</string>
   <string name="back">戻る</string>
   <string name="run_night_screen">実行</string>
+  <string name="auto_start_on_launch">自動実行</string>
+  <string name="auto_start_on_launch_description">アプリを開くたびにナイトスクリーンを自動でオンにします</string>
   <string name="settings">設定</string>
   <string name="about">アプリについて</string>
   <string name="change_light">輝度</string>

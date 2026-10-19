@@ -5,6 +5,8 @@
     <string name="ok">确定</string>
     <string name="back">返回</string>
     <string name="run_night_screen">启动</string>
+    <string name="auto_start_on_launch">自动开启</string>
+    <string name="auto_start_on_launch_description">每次打开应用时自动开启遮罩，不用再手动点启动</string>
     <string name="settings">设置</string>
     <string name="about">关于</string>
     <string name="change_light">调节亮度</string>

@@ -6,6 +6,8 @@
     <string name="ok">ОК</string>
     <string name="back">Назад</string>
     <string name="run_night_screen">Запустить</string>
+    <string name="auto_start_on_launch">Автозапуск</string>
+    <string name="auto_start_on_launch_description">Включать ночной экран при каждом открытии приложения</string>
     <string name="settings">Настройки</string>
     <string name="about">О приложении</string>
     <string name="change_light">Яркость</string>
