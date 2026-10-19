@@ -10,30 +10,31 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import androidx.core.view.isVisible
-import com.skyd.nightscreen.util.screenHeight
-import com.skyd.nightscreen.util.screenWidth
+import com.skyd.nightscreen.util.screenWidthHeight
 
 
 class LayerView(context: Context) : View(context) {
 
-    var layoutParams = WindowManager.LayoutParams(
-        context.screenWidth,
-        context.screenHeight,
-        0,
-        0,
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY
-        },
-        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                or WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
-                or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-        PixelFormat.TRANSLUCENT
-    ).apply {
+    var layoutParams = context.screenWidthHeight.let { (width, height) ->
+        WindowManager.LayoutParams(
+            width,
+            height,
+            0,
+            0,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            } else {
+                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY
+            },
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                    or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    or WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
+                    or WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT
+        )
+    }.apply {
         gravity = Gravity.TOP or Gravity.START
         fitsSystemWindows = true
     }
@@ -62,11 +63,17 @@ class LayerView(context: Context) : View(context) {
      * 已添加到 WindowManager 的窗口不会随屏幕旋转自动改变宽高，
      * 如果继续沿用竖屏时的尺寸，横屏下遮罩就只能盖住屏幕的一部分，
      * 所以旋转屏幕或显示遮罩前都要刷新一次尺寸。
+     *
+     * 尺寸没变时不再调用 updateViewLayout：那是每一次都要跨进程同步等待的
+     * WindowManager 调用，而遮罩层在「关闭」状态下窗口是常驻的，
+     * 每次开启都白付一次往返开销，正好卡在用户按下按钮的这一刻。
      */
     fun updateSize() {
-        layoutParams.width = context.screenWidth
-        layoutParams.height = context.screenHeight
-        if (isAttachedToWindow) {
+        val (width, height) = context.screenWidthHeight
+        val changed = layoutParams.width != width || layoutParams.height != height
+        layoutParams.width = width
+        layoutParams.height = height
+        if (changed && isAttachedToWindow) {
             // 熄屏 / 服务被销毁的瞬间可能刚好被 DisplayListener 回调到，
             // 此时窗口已经不在 WindowManager 上了，updateViewLayout 会抛
             // IllegalArgumentException: View not attached to window manager
@@ -79,10 +86,24 @@ class LayerView(context: Context) : View(context) {
 
     private var colorAnimator: ObjectAnimator? = null
 
-    fun updateColor(color: Int) {
+    /**
+     * 更新遮罩颜色。
+     *
+     * [animate] 为 false 时直接赋值。开启遮罩必须走这条路：ObjectAnimator 的默认时长是
+     * 300ms，而它作用在「屏幕整体压暗」上会被感知成一个明显的延迟——
+     * 用户按下按钮后屏幕还会继续亮 0.3 秒才慢慢变暗。
+     * 亮度滑杆那种连续变化仍然需要动画，否则颜色会一格一格地跳。
+     */
+    fun updateColor(color: Int, animate: Boolean = true) {
         // 旧实现每次都新建动画且从不取消。拖动亮度滑杆时会瞬间堆积几十个动画，
         // 它们互相抢同一个 backgroundColor 属性，表现为颜色抖动、掉帧甚至卡死。
         colorAnimator?.cancel()
+        colorAnimator = null
+        if (!animate) {
+            bgColor = color
+            setBackgroundColor(color)
+            return
+        }
         colorAnimator = ObjectAnimator.ofInt(this, "backgroundColor", bgColor, color).apply {
             setEvaluator(ArgbEvaluator())
             start()

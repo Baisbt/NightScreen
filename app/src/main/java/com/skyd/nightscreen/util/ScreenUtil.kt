@@ -45,27 +45,30 @@ private fun Context.displayLongAndShortSide(): Pair<Int, Int> {
     return maxOf(dm.widthPixels, dm.heightPixels) to minOf(dm.widthPixels, dm.heightPixels)
 }
 
-val Context.screenHeight: Int
+/**
+ * 当前方向下的整屏宽高，一次性算出来。
+ *
+ * 遮罩层每次显示/旋转都要同时拿到宽和高，如果分别读 [screenWidth] 和 [screenHeight]，
+ * 会重复做两遍 getRealMetrics（跨进程）和四遍 getIdentifier（按名字查系统资源，很慢）。
+ * 在启用遮罩这种对延迟敏感的时刻，这些重复查询是白花的。
+ */
+val Context.screenWidthHeight: Pair<Int, Int>
     get() {
         val (longSide, shortSide) = displayLongAndShortSide()
-        val height = if (displayIsLand) shortSide else longSide
+        val statusBar = statusBarHeight
+        val navigationBar = navigationBarHeight
         return if (displayIsLand) {
-            height + statusBarHeight
+            (longSide + navigationBar) to (shortSide + statusBar)
         } else {
-            height + statusBarHeight + navigationBarHeight
+            shortSide to (longSide + statusBar + navigationBar)
         }
     }
 
+val Context.screenHeight: Int
+    get() = screenWidthHeight.second
+
 val Context.screenWidth: Int
-    get() {
-        val (longSide, shortSide) = displayLongAndShortSide()
-        val width = if (displayIsLand) longSide else shortSide
-        return if (displayIsLand) {
-            width + navigationBarHeight
-        } else {
-            width
-        }
-    }
+    get() = screenWidthHeight.first
 
 val Context.statusBarHeight: Int
     get() {

@@ -26,22 +26,35 @@ import com.skyd.nightscreen.ui.service.isAccessibilityServiceConnected
 private const val TAG = "NightScreenLayer"
 
 fun showDialogAndNightScreen() {
-    if (dialogIsShowing) return
+    if (dialogIsShowing || dialogScheduled) return
     if (XXPermissions.isGranted(appContext, Permission.SYSTEM_ALERT_WINDOW)) {
         showNightScreen()
-        // 悬浮窗类型必须改成 TYPE_APPLICATION_OVERLAY，否则 Android 8 以上直接抛
-        // BadTokenException（permission denied for window type 2003）
-        runCatching {
-            getNightScreenDialog().apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-                } else {
-                    window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
-                }
-            }.show()
-        }.onFailure { Log.e(TAG, "显示调节亮度对话框失败", it) }
+        // 对话框要 inflate 布局、构造 Material 组件和 Slider，起步就是几百毫秒。
+        // 如果和遮罩放在同一个消息里同步执行，遮罩那一帧会被一起推迟到对话框建好之后，
+        // 用户按了按钮却还要再等一会儿屏幕才变暗。所以先让遮罩出一帧，再弹对话框。
+        dialogScheduled = true
+        Handler(Looper.getMainLooper()).postDelayed({
+            dialogScheduled = false
+            if (dialogIsShowing) return@postDelayed
+            // 悬浮窗类型必须改成 TYPE_APPLICATION_OVERLAY，否则 Android 8 以上直接抛
+            // BadTokenException（permission denied for window type 2003）
+            runCatching {
+                getNightScreenDialog().apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                    } else {
+                        window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
+                    }
+                }.show()
+            }.onFailure { Log.e(TAG, "显示调节亮度对话框失败", it) }
+        }, DIALOG_SHOW_DELAY_MS)
     }
 }
+
+private var dialogScheduled = false
+
+/** 一帧的时长，留一点余量保证遮罩已经完成绘制。 */
+private const val DIALOG_SHOW_DELAY_MS = 32L
 
 fun closeDialog() {
     // 窗口可能已被系统回收，dismiss 会抛 IllegalArgumentException 或
@@ -57,6 +70,8 @@ fun showNightScreen() {
         // 显示前按当前屏幕方向刷新尺寸：横屏启动时若沿用竖屏尺寸，遮罩只能盖住一半屏幕
         layerView.updateSize()
         layerView.visible()
+        // 开启不做淡入：颜色动画默认 300ms，作用在整屏压暗上就是实打实的一段延迟
+        layerView.updateColor(calculatedColor, animate = false)
         if (!layerView.isAttachedToWindow) {
             // 遮罩画不出来，说明无障碍服务还没连上。
             // 但进程刚启动时服务绑定需要几百毫秒，此刻就判定「坏了」并弹提示属于误报；
@@ -69,13 +84,18 @@ fun showNightScreen() {
             applyScreenBrightness(true)
         }
         layerView.keepScreenOn = keepScreenOn
-        layerView.updateColor(calculatedColor)
-        appContext.sendBroadcast(
-            Intent(NightScreenService.ACTION_ACTIVE_TILE)
-                .setPackage(appContext.packageName)
-        )
-        NightScreenReceiver.sendBroadcast(action = NightScreenReceiver.SHOW_NOTIFICATION_ACTION)
+        // 更新磁贴和通知栏都要走系统进程（发广播、建通知渠道、提交通知），
+        // 同步做完会推迟遮罩的首次绘制，所以挪到遮罩画出来之后再补。
+        Handler(Looper.getMainLooper()).post { publishRunningState() }
     }
+}
+
+private fun publishRunningState() {
+    appContext.sendBroadcast(
+        Intent(NightScreenService.ACTION_ACTIVE_TILE)
+            .setPackage(appContext.packageName)
+    )
+    NightScreenReceiver.sendBroadcast(action = NightScreenReceiver.SHOW_NOTIFICATION_ACTION)
 }
 
 private const val CONNECTION_CHECK_DELAY_MS = 2000L
@@ -178,6 +198,18 @@ var keepScreenOn = sharedPreferences().getBoolean("keepScreenOn", false)
         field = value
         layerView.keepScreenOn = value
         sharedPreferences().editor { putBoolean("keepScreenOn", value) }
+    }
+
+/**
+ * 每次打开应用时自动开启遮罩。
+ *
+ * 和 [nightScreenRequested] 不是一回事：后者是「进程被系统杀掉后要不要把遮罩恢复回来」，
+ * 由用户上次的状态自动决定；这个则是用户显式打开的开关，用来省掉每次手动点「启动」。
+ */
+var autoNightScreenOnLaunch = sharedPreferences().getBoolean("autoNightScreenOnLaunch", false)
+    set(value) {
+        field = value
+        sharedPreferences().editor { putBoolean("autoNightScreenOnLaunch", value) }
     }
 
 /**

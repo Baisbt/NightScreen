@@ -18,6 +18,7 @@ import com.skyd.nightscreen.ui.activity.MainActivity
 import com.skyd.nightscreen.ui.component.alphaRange
 import com.skyd.nightscreen.ui.component.closeNightScreen
 import com.skyd.nightscreen.ui.component.screenAlpha
+import com.skyd.nightscreen.ui.component.showDialogAndNightScreen
 import com.skyd.nightscreen.ui.screen.settings.SETTINGS_SCREEN_ROUTE
 import com.skyd.nightscreen.ui.service.isAccessibilityServiceRunning
 import java.lang.Float.max
@@ -80,17 +81,32 @@ fun getNightScreenDialog(c: Context? = null): AlertDialog {
 }
 
 @SuppressLint("LaunchActivityFromNotification")
-fun requestAllPermissionsWithAccessibilityAndShow(context: Context) {
+fun requestAllPermissionsWithAccessibilityAndShow(
+    context: Context,
+    /**
+     * 调用方是否就在本进程的前台（例如主页的「启动」按钮）。
+     *
+     * 是的话直接执行，不用再绕一圈系统广播队列。广播本身要经过 system_server 排队、
+     * 再回调到自己进程，正常也要几十毫秒，忙的时候更久；而这条路径是用户按下去就
+     * 期待屏幕立刻变暗的，白等一趟最不划算。
+     * 通知栏 / 快捷磁贴那种「从外面叫醒 App」的场景仍走广播（默认 false）。
+     */
+    direct: Boolean = false,
+) {
     if (XXPermissions.isGranted(context, Permission.SYSTEM_ALERT_WINDOW) &&
         XXPermissions.isGranted(context, Permission.POST_NOTIFICATIONS) &&
         XXPermissions.isGranted(context, Permission.NOTIFICATION_SERVICE) &&
         XXPermissions.isGranted(context, Permission.WRITE_SETTINGS) &&
         isAccessibilityServiceRunning(context)
     ) {
-        NightScreenReceiver.sendBroadcast(
-            context = context,
-            action = NightScreenReceiver.SHOW_DIALOG_AND_NIGHT_SCREEN_ACTION
-        )
+        if (direct) {
+            showDialogAndNightScreen()
+        } else {
+            NightScreenReceiver.sendBroadcast(
+                context = context,
+                action = NightScreenReceiver.SHOW_DIALOG_AND_NIGHT_SCREEN_ACTION
+            )
+        }
     } else {
         context.startActivity(
             Intent(context, MainActivity::class.java).apply {

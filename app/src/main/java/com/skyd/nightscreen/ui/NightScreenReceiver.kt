@@ -23,6 +23,7 @@ import com.skyd.nightscreen.ui.component.showDialogAndNightScreen
 import com.skyd.nightscreen.ui.screen.settings.SETTINGS_SCREEN_ROUTE
 
 class NightScreenReceiver : BroadcastReceiver() {
+
     companion object {
         const val CLOSE_NOTIFICATION_ACTION = "com.skyd.nightscreen.CLOSE_NOTIFICATION"
         const val SHOW_NOTIFICATION_ACTION = "com.skyd.nightscreen.SHOW_NOTIFICATION"
@@ -32,6 +33,13 @@ class NightScreenReceiver : BroadcastReceiver() {
         const val POWER_OFF_ACTION = "com.skyd.nightscreen.POWER_OFF"
         const val CHANNEL_ID = "NightScreenNotification"
         const val NOTIFICATION_ID = 1
+
+        /**
+         * 这个 Receiver 声明在清单里，每次收到广播系统都会新建一个实例，
+         * 所以「渠道已创建」必须记在类上而不是实例上。
+         */
+        @Volatile
+        private var channelCreated = false
 
         fun sendBroadcast(
             context: Context = appContext,
@@ -123,6 +131,10 @@ class NightScreenReceiver : BroadcastReceiver() {
     }
 
     private fun createNotificationChannel() {
+        // 渠道建过一次就一直存在，重复调用是白跑一次跨进程请求，
+        // 而这条路径正好压在「点启动 → 屏幕变暗」的紧要时刻上
+        if (channelCreated) return
+        channelCreated = true
         // Create the NotificationChannel, but only on API 26+ because
         // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
