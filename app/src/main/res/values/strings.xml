@@ -43,6 +43,7 @@
     <string name="about_screen_other_works">Other works</string>
     <string name="overlay_accessibility_service_label">Night Screen overlay</string>
     <string name="accessibility_service_description">Use accessibility service to implement the function of reducing screen brightness</string>
+    <string name="accessibility_service_not_running">Accessibility service is not connected. Please turn it off and on again in Settings - Accessibility.</string>
     <string name="sponsor">Buy me a coffee</string>
     <string name="sponsor_description">If you like the app, you can buy me a cup of coffee, thanks!</string>
     <string name="sponsor_afadian">Afadian</string>

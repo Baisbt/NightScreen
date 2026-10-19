@@ -11,6 +11,8 @@ import android.view.accessibility.AccessibilityEvent
 import com.skyd.nightscreen.BuildConfig
 import com.skyd.nightscreen.ui.component.closeNightScreen
 import com.skyd.nightscreen.ui.component.layerView
+import com.skyd.nightscreen.ui.component.shouldRestoreNightScreen
+import com.skyd.nightscreen.ui.component.showNightScreen
 
 class OverlayAccessibilityService : AccessibilityService() {
 
@@ -37,8 +39,16 @@ class OverlayAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        attachLayer()
+        accessibilityServiceConnected = true
+        val attached = attachLayer()
         registerDisplayListener()
+        // 进程被 ROM 省电策略回收后，无障碍服务会被系统重新拉起，但内存里的护眼状态已经丢了，
+        // 遮罩不会自己回来，用户看到的就是「锁屏一段时间后软件突然失效」。
+        // 这里按持久化的期望状态恢复；如果是用户主动关掉服务（走 onDestroy），期望状态已被清掉，不会恢复。
+        if (attached && shouldRestoreNightScreen()) {
+            runCatching { showNightScreen() }
+                .onFailure { Log.e(TAG, "恢复护眼遮罩失败", it) }
+        }
     }
 
     private fun registerDisplayListener() {
@@ -66,7 +76,7 @@ class OverlayAccessibilityService : AccessibilityService() {
      *    于是 addView 抛 BadTokenException: token ... is not valid。
      *    所以每次 addView 之前必须先把 token 清空，让框架填入本次连接的新 token。
      */
-    private fun attachLayer() {
+    private fun attachLayer(): Boolean {
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         if (layerView.isAttachedToWindow) {
@@ -78,11 +88,13 @@ class OverlayAccessibilityService : AccessibilityService() {
         layerView.resetWindowToken()
         layerView.updateSize()
 
-        runCatching { windowManager.addView(layerView, layerView.layoutParams) }
+        return runCatching { windowManager.addView(layerView, layerView.layoutParams) }
             .onFailure { Log.e(TAG, "添加遮罩窗口失败", it) }
+            .isSuccess
     }
 
     override fun onDestroy() {
+        accessibilityServiceConnected = false
         super.onDestroy()
 
         (getSystemService(DISPLAY_SERVICE) as? DisplayManager)
@@ -102,6 +114,19 @@ class OverlayAccessibilityService : AccessibilityService() {
         const val TAG = "OverlayAccessibilityService"
     }
 }
+
+/**
+ * 无障碍服务当前是否真的连上了（而不是只在系统设置里勾着）。
+ *
+ * 系统设置里「已开启」和「实际在跑」是两件事：服务崩溃、被 ROM 冻结时，
+ * 设置项依然存在，但 Bound services 是空的，此时画不了任何遮罩。
+ * 这个标志只在服务进程内有效，进程被杀后会回到 false，正好可以当作健康探针。
+ */
+@Volatile
+var accessibilityServiceConnected: Boolean = false
+    private set
+
+fun isAccessibilityServiceConnected(): Boolean = accessibilityServiceConnected
 
 fun isAccessibilityServiceRunning(context: Context): Boolean {
     val prefString: String? = Settings.Secure.getString(

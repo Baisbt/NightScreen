@@ -67,15 +67,26 @@ class LayerView(context: Context) : View(context) {
         layoutParams.width = context.screenWidth
         layoutParams.height = context.screenHeight
         if (isAttachedToWindow) {
-            (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-                .updateViewLayout(this, layoutParams)
+            // 熄屏 / 服务被销毁的瞬间可能刚好被 DisplayListener 回调到，
+            // 此时窗口已经不在 WindowManager 上了，updateViewLayout 会抛
+            // IllegalArgumentException: View not attached to window manager
+            runCatching {
+                (context.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+                    .updateViewLayout(this, layoutParams)
+            }
         }
     }
 
+    private var colorAnimator: ObjectAnimator? = null
+
     fun updateColor(color: Int) {
-        ObjectAnimator.ofInt(this, "backgroundColor", bgColor, color).apply {
+        // 旧实现每次都新建动画且从不取消。拖动亮度滑杆时会瞬间堆积几十个动画，
+        // 它们互相抢同一个 backgroundColor 属性，表现为颜色抖动、掉帧甚至卡死。
+        colorAnimator?.cancel()
+        colorAnimator = ObjectAnimator.ofInt(this, "backgroundColor", bgColor, color).apply {
             setEvaluator(ArgbEvaluator())
-        }.start()
+            start()
+        }
         bgColor = color
     }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -96,7 +97,13 @@ class MainActivity : BaseComposeActivity() {
                         onClose = { openSponsorDialog = false }
                     )
                 }
-                doIntentAction(intent?.action)
+                // 必须放在 LaunchedEffect 里只跑一次。
+                // 直接写在 setContent 的 lambda 里会在每次重组时执行，
+                // 于是权限申请、页面跳转会被反复触发（叠几十个权限弹窗），
+                // onNewIntent 那条路径仍然走自己的调用。
+                LaunchedEffect(Unit) {
+                    doIntentAction(intent?.action)
+                }
             }
         }
     }
