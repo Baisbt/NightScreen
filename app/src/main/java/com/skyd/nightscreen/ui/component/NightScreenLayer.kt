@@ -17,6 +17,7 @@ import com.skyd.nightscreen.ui.NightScreenReceiver
 import com.skyd.nightscreen.ui.component.dialog.dialog
 import com.skyd.nightscreen.ui.component.dialog.dialogIsShowing
 import com.skyd.nightscreen.ui.component.dialog.getNightScreenDialog
+import com.skyd.nightscreen.ui.service.AccessibilityGuard
 import com.skyd.nightscreen.ui.service.NightScreenService
 import com.skyd.nightscreen.ui.service.isAccessibilityServiceConnected
 
@@ -56,12 +57,22 @@ fun showNightScreen() {
         layerView.visible()
         if (!layerView.isAttachedToWindow) {
             // 无障碍服务没连上时遮罩根本画不出来，只调 visibility 是静默无效的。
-            // 以前这种情况用户只能看到「点了没反应」，完全无法判断原因，所以这里明确提示。
-            Log.w(TAG, "遮罩视图未挂到窗口上")
-            // 只在服务确实没连上时才提示。服务连着、窗口只是还没挂好属于瞬时状态
-            // （例如安装、重启进程的瞬间），弹提示会变成误报。
             if (!isAccessibilityServiceConnected()) {
-                appContext.getString(R.string.accessibility_service_not_running).showToast()
+                // 服务掉线了（被 ROM 清理后系统不会自动重绑）。有 WRITE_SECURE_SETTINGS 就自己修：
+                // 重写一次服务列表让系统重新绑定，绑定成功后 onServiceConnected 会按
+                // nightScreenRequested 把遮罩挂上，用户不需要再点一次。
+                if (AccessibilityGuard.canRestore()) {
+                    Log.i(TAG, "无障碍服务未连接，尝试自动恢复")
+                    appContext.getString(R.string.reconnecting_accessibility_service).showToast()
+                    AccessibilityGuard.restore()
+                } else {
+                    Log.w(TAG, "无障碍服务未连接且无自愈权限，引导用户手动关开")
+                    appContext.getString(R.string.accessibility_service_not_running).showToast()
+                    AccessibilityGuard.openAccessibilitySettings()
+                }
+            } else {
+                // 服务连着、窗口只是还没挂好，属于瞬时状态，不打扰用户
+                Log.w(TAG, "遮罩视图未挂到窗口上")
             }
         }
         if (getLowestScreenBrightness() && !getActualLowestScreenBrightness()) {

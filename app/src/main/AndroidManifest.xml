@@ -8,6 +8,16 @@
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
+    <!--
+        可选权限，不会被自动授予。授予后本应用可以在自己因被系统/ROM 清理而
+        「无障碍服务掉线」时，重写一次服务列表让系统重新绑定（自愈）。
+        不授予也能正常用，只会退化成提示用户去系统设置里关开一次。
+        一次性授权命令：
+          adb shell pm grant com.skyd.nightscreen.debug android.permission.WRITE_SECURE_SETTINGS
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:name="com.skyd.nightscreen.App"
