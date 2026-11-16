@@ -5,11 +5,12 @@ import android.content.Context
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
 import android.provider.Settings
-import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.skyd.nightscreen.BuildConfig
-import com.skyd.nightscreen.ui.component.closeNightScreen
+import com.skyd.nightscreen.log.HealthMonitor
+import com.skyd.nightscreen.log.NSLog
+import com.skyd.nightscreen.ui.component.detachNightScreenUi
 import com.skyd.nightscreen.ui.component.layerView
 import com.skyd.nightscreen.ui.component.shouldRestoreNightScreen
 import com.skyd.nightscreen.ui.component.showNightScreen
@@ -24,7 +25,8 @@ class OverlayAccessibilityService : AccessibilityService() {
         override fun onDisplayAdded(displayId: Int) = Unit
         override fun onDisplayRemoved(displayId: Int) = Unit
         override fun onDisplayChanged(displayId: Int) {
-            layerView.updateSize()
+            runCatching { layerView.updateSize() }
+                .onFailure { NSLog.w(TAG, "屏幕变化后更新遮罩尺寸失败", it) }
         }
     }
 
@@ -34,29 +36,41 @@ class OverlayAccessibilityService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         // 旋转屏幕后窗口尺寸不会自动跟随，需要按新的方向重算，否则会只遮住一半屏幕
-        layerView.updateSize()
+        runCatching { layerView.updateSize() }
+            .onFailure { NSLog.w(TAG, "配置变化后更新遮罩尺寸失败", it) }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         accessibilityServiceConnected = true
+        NSLog.i(TAG, "无障碍服务已连接")
+
         val attached = attachLayer()
         registerDisplayListener()
+
         // 进程被 ROM 省电策略回收后，无障碍服务会被系统重新拉起，但内存里的护眼状态已经丢了，
         // 遮罩不会自己回来，用户看到的就是「锁屏一段时间后软件突然失效」。
         // 这里按持久化的期望状态恢复；如果是用户主动关掉服务（走 onDestroy），期望状态已被清掉，不会恢复。
         if (attached && shouldRestoreNightScreen()) {
+            NSLog.i(TAG, "按持久化状态恢复护眼遮罩")
             runCatching { showNightScreen() }
-                .onFailure { Log.e(TAG, "恢复护眼遮罩失败", it) }
+                .onFailure { NSLog.e(TAG, "恢复护眼遮罩失败", it) }
         }
+
+        // 服务能连上就说明授权是有效的，记下来，避免下次启动又去申请
+        com.skyd.nightscreen.ext.AccessibilityPermission.markGranted(this)
+
+        HealthMonitor.snapshot("服务连接")
     }
 
     private fun registerDisplayListener() {
-        (getSystemService(DISPLAY_SERVICE) as? DisplayManager)?.apply {
-            // 重复注册会抛异常，先反注册一次（未注册时是无副作用的）
-            unregisterDisplayListener(displayListener)
-            registerDisplayListener(displayListener, null)
-        }
+        runCatching {
+            (getSystemService(DISPLAY_SERVICE) as? DisplayManager)?.apply {
+                // 重复注册会抛异常，先反注册一次（未注册时是无副作用的）
+                unregisterDisplayListener(displayListener)
+                registerDisplayListener(displayListener, null)
+            }
+        }.onFailure { NSLog.w(TAG, "注册屏幕变化监听失败", it) }
     }
 
     /**
@@ -81,7 +95,7 @@ class OverlayAccessibilityService : AccessibilityService() {
 
         if (layerView.isAttachedToWindow) {
             runCatching { windowManager.removeViewImmediate(layerView) }
-                .onFailure { Log.w(TAG, "移除旧遮罩窗口失败，继续尝试重新添加", it) }
+                .onFailure { NSLog.w(TAG, "移除旧遮罩窗口失败，继续尝试重新添加", it) }
         }
 
         // 关键修复：丢弃上一次连接留下的窗口 token
@@ -89,25 +103,40 @@ class OverlayAccessibilityService : AccessibilityService() {
         layerView.updateSize()
 
         return runCatching { windowManager.addView(layerView, layerView.layoutParams) }
-            .onFailure { Log.e(TAG, "添加遮罩窗口失败", it) }
+            .onSuccess { NSLog.i(TAG, "遮罩窗口挂载成功") }
+            .onFailure { NSLog.e(TAG, "添加遮罩窗口失败", it) }
             .isSuccess
     }
 
     override fun onDestroy() {
         accessibilityServiceConnected = false
+        NSLog.w(TAG, "无障碍服务断开（onDestroy）")
         super.onDestroy()
 
-        (getSystemService(DISPLAY_SERVICE) as? DisplayManager)
-            ?.unregisterDisplayListener(displayListener)
+        runCatching {
+            (getSystemService(DISPLAY_SERVICE) as? DisplayManager)
+                ?.unregisterDisplayListener(displayListener)
+        }
 
-        closeNightScreen()
-
-        // 服务结束时把遮罩窗口摘掉，避免下次 onServiceConnected 重复添加
+        // 先解绑遮罩，再关遮罩：closeNightScreen() 会写 SharedPreferences 并广播，
+        // 这些操作产生的看护回调不应该在服务已经断开之后再触发一次自愈。
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         if (layerView.isAttachedToWindow) {
             runCatching { windowManager.removeViewImmediate(layerView) }
-                .onFailure { Log.w(TAG, "移除遮罩窗口失败", it) }
+                .onFailure { NSLog.w(TAG, "移除遮罩窗口失败", it) }
         }
+
+        // 服务断开有两种情况，必须区分对待：
+        //
+        // 1. 系统主动解绑（ROM 回收、自愈重写设置、用户toggle）：只撤下遮罩表现，
+        //    保留「期望状态」，等重新连上时自动恢复；
+        // 2. 用户主动关闭夜屏：此时期望状态已经被 closeNightScreen() 置空，
+        //    这里的 detach 不会造成任何副作用。
+        //
+        // 老实现无条件调用 closeNightScreen()，会在系统解绑时把期望状态一起清掉，
+        // 而自愈恰恰是靠重写设置实现的——等于「自愈一次就把自己废了」。
+        detachNightScreenUi()
+        HealthMonitor.snapshot("服务断开")
     }
 
     private companion object {
@@ -134,11 +163,11 @@ fun isAccessibilityServiceRunning(context: Context): Boolean {
         Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     )
 
-    val raysAccessibilityServiceName = OverlayAccessibilityService::class.java.name
+    val serviceName = OverlayAccessibilityService::class.java.name
 
     val patterns = arrayOf(
-        "${BuildConfig.APPLICATION_ID}/${raysAccessibilityServiceName}",
-        raysAccessibilityServiceName.replaceFirst(
+        "${BuildConfig.APPLICATION_ID}/$serviceName",
+        serviceName.replaceFirst(
             context.packageName.substringBeforeLast(".debug"),
             "${BuildConfig.APPLICATION_ID}/"
         )

@@ -29,10 +29,15 @@ android {
 
     signingConfigs {
         release {
-            keyAlias secret.sign.RELEASE_KEY_ALIAS
-            keyPassword secret.sign.RELEASE_KEY_PASSWORD
-            storeFile file('../key.jks')
-            storePassword secret.sign.RELEASE_STORE_PASSWORD
+            // 仓库里没有 key.jks 时（例如只做 debug 验证），跳过 release 签名配置，
+            // 否则配置阶段就会因为找不到 keystore 而失败。
+            def keystore = rootProject.file('key.jks')
+            if (keystore.exists()) {
+                storeFile keystore
+                keyAlias rootProject.ext.sign.RELEASE_KEY_ALIAS
+                keyPassword rootProject.ext.sign.RELEASE_KEY_PASSWORD
+                storePassword rootProject.ext.sign.RELEASE_STORE_PASSWORD
+            }
         }
     }
 
@@ -57,7 +62,7 @@ android {
             }
         }
         release {
-            signingConfig signingConfigs.release    //签名
+            signingConfig rootProject.file('key.jks').exists() ? signingConfigs.release : null
             minifyEnabled true
             shrinkResources true       // 使用keep.xml，keep住某些资源文件
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

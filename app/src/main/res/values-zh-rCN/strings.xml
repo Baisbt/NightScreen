@@ -22,8 +22,6 @@
     <string name="settings_screen_keep_screen_on">保持屏幕常亮</string>
     <string name="settings_screen_keep_screen_on_description">开启夜间屏幕时保持屏幕常亮</string>
     <string name="about_screen_goto_github_repo">访问 GitHub 仓库</string>
-    <string name="about_screen_join_discord">加入 Discord 服务器</string>
-    <string name="about_screen_join_telegram">加入 Telegram 群组</string>
     <string name="no_browser_found">找不到浏览器，网址是：%s</string>
     <string name="license">开源许可</string>
     <string name="no_permission_can_not_run">无悬浮窗权限，无法启动！</string>
@@ -36,22 +34,15 @@
     <string name="alert_window_permission">悬浮窗</string>
     <string name="post_notification_permission">通知栏</string>
     <string name="night_screen_is_running">夜屏已启动…</string>
-    <string name="about_screen_other_works_rays_name">Rays (Record All Your Stickers)</string>
-    <string name="about_screen_other_works_rays_description">一个在本地记录、查找、管理表情包的工具。🥰 您还在为手机中的表情包太多，找不到想要的表情包而苦恼吗？使用这款工具将帮助您管理您存储的表情包，再也不因为找不到表情包而烦恼！😋</string>
-    <string name="about_screen_other_works_rays_url">https://github.com/SkyD666/Rays-Android</string>
-    <string name="about_screen_other_works_raca_name">Raca (Record All Classic Articles)</string>
-    <string name="about_screen_other_works_raca_description">一个在本地记录、查找抽象段落/评论区小作文的工具。🤗 您还在为记不住小作文内容，面临前面、中间、后面都忘了的尴尬处境吗？使用这款工具将帮助您记录您所遇到的小作文，再也不因为忘记而烦恼！😋</string>
-    <string name="about_screen_other_works_raca_url">https://github.com/SkyD666/Raca-Android</string>
     <string name="about_screen_other_works">其他作品</string>
+    <string name="about_upstream_notice">本应用是「夜屏 Night Screen」的二次开发版本。\n原项目作者 SkyD666，遵循 GPLv3 许可证。</string>
     <string name="overlay_accessibility_service_label">夜屏</string>
     <string name="accessibility_service_description">使用无障碍服务来实现降低亮度的功能</string>
-    <string name="sponsor">赞助作者</string>
-    <string name="sponsor_description">如果您喜欢我开发的软件，您可以请我喝一杯咖啡，谢谢！</string>
-    <string name="sponsor_afadian">爱发电</string>
-    <string name="sponsor_buy_me_a_coffee">Buy me a coffee</string>
     <string name="dialog_close">关闭</string>
     <string name="settings_screen_scheduled_task_settings">定时任务</string>
     <string name="settings_screen_schedule_task_start_time">启动时间</string>
     <string name="settings_screen_schedule_task_stop_time">关闭时间</string>
     <string name="settings_screen_schedule_task_auto_run">自动启动</string>
-</resources>
+    <string name="notification_title">夜屏正在运行</string>
+    <string name="notification_keep_alive">保持遮罩层在后台存活</string>
+    <string name="notification_channel_keep_alive">后台状态</string></resources>

@@ -23,8 +23,6 @@
     <string name="settings_screen_keep_screen_on">Не отключать экран</string>
     <string name="settings_screen_keep_screen_on_description">Держать экран включенным, когда активна ночная подсветка</string>
     <string name="about_screen_goto_github_repo">GitHub</string>
-    <string name="about_screen_join_discord">Discord</string>
-    <string name="about_screen_join_telegram">Telegram</string>
     <string name="no_browser_found">Не удалось найти браузер, URL: %s</string>
     <string name="license">Лицензия</string>
     <string name="no_permission_can_not_run">Нет разрешения на показ системных оповещений!</string>
@@ -37,22 +35,14 @@
     <string name="alert_window_permission">окно оповещений</string>
     <string name="post_notification_permission">публикация уведомлений</string>
     <string name="night_screen_is_running">Ночная подсветка активирована…</string>
-    <string name="about_screen_other_works_rays_name">Rays (Запиши все свои стикеры)</string>
-    <string name="about_screen_other_works_rays_description">Инструмент для записи, поиска и управления стикерами на вашем телефоне. 🥰 До сих пор мучаетесь с множеством стикеров и не можете найти нужный? Этот инструмент поможет вам управлять стикерами! &#x1F60B;</string>
-    <string name="about_screen_other_works_rays_url">https://github.com/SkyD666/Rays-Android</string>
-    <string name="about_screen_other_works_raca_name">Raca (Запиши все классические статьи)</string>
-    <string name="about_screen_other_works_raca_description">Инструмент для локальной записи и поиска абстрактных отрывков и мини-эссе в комментариях. 🤗 До сих пор не можете вспомнить содержание своего мини-эссе и сталкиваетесь с неловкостью, когда забываете начало, середину и конец? Использование этого инструмента поможет вам сохранять найденные мини-эссе и никогда не забывать их! &#x1F60B;</string>
-    <string name="about_screen_other_works_raca_url">https://github.com/SkyD666/Raca-Android</string>
     <string name="about_screen_other_works">Другие работы</string>
     <string name="overlay_accessibility_service_label">Наложение Ночной подсветки</string>
     <string name="accessibility_service_description">Используйте службу доступности для реализации функции уменьшения яркости экрана</string>
-    <string name="sponsor">Купи мне кофе</string>
-    <string name="sponsor_description">Если вам нравится приложение, купите мне чашечку кофе, спасибо!</string>
-    <string name="sponsor_afadian">Afadian</string>
-    <string name="sponsor_buy_me_a_coffee">Купи мне кофе</string>
     <string name="dialog_close">Закрыть</string>
     <string name="settings_screen_scheduled_task_settings">Запланированная задача</string>
     <string name="settings_screen_schedule_task_start_time">Время начала</string>
     <string name="settings_screen_schedule_task_stop_time">Время окончания</string>
     <string name="settings_screen_schedule_task_auto_run">Запуск по расписанию</string>
-</resources>
+    <string name="notification_title">Night Screen запущен</string>
+    <string name="notification_keep_alive">Поддерживает оверлей в фоновом режиме</string>
+    <string name="notification_channel_keep_alive">Фоновое состояние</string></resources>

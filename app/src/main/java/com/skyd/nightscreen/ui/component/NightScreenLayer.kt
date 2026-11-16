@@ -5,7 +5,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.util.Log
 import android.view.WindowManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -15,11 +14,14 @@ import com.skyd.nightscreen.R
 import com.skyd.nightscreen.appContext
 import com.skyd.nightscreen.ext.editor
 import com.skyd.nightscreen.ext.sharedPreferences
+import com.skyd.nightscreen.log.HealthMonitor
+import com.skyd.nightscreen.log.NSLog
 import com.skyd.nightscreen.ui.NightScreenReceiver
 import com.skyd.nightscreen.ui.component.dialog.dialog
 import com.skyd.nightscreen.ui.component.dialog.dialogIsShowing
 import com.skyd.nightscreen.ui.component.dialog.getNightScreenDialog
-import com.skyd.nightscreen.ui.service.AccessibilityGuard
+import com.skyd.nightscreen.ui.service.HealthWatchdog
+import com.skyd.nightscreen.ui.service.NightScreenForegroundService
 import com.skyd.nightscreen.ui.service.NightScreenService
 import com.skyd.nightscreen.ui.service.isAccessibilityServiceConnected
 
@@ -46,7 +48,7 @@ fun showDialogAndNightScreen() {
                         window?.setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT)
                     }
                 }.show()
-            }.onFailure { Log.e(TAG, "显示调节亮度对话框失败", it) }
+            }.onFailure { NSLog.e(TAG, "显示调节亮度对话框失败", it) }
         }, DIALOG_SHOW_DELAY_MS)
     }
 }
@@ -65,6 +67,7 @@ fun closeDialog() {
 fun showNightScreen() {
     if (showNightScreenLayer) return
     if (XXPermissions.isGranted(appContext, Permission.SYSTEM_ALERT_WINDOW)) {
+        NSLog.i(TAG, "开启夜屏遮罩")
         showNightScreenLayer = true
         nightScreenRequested = true
         // 显示前按当前屏幕方向刷新尺寸：横屏启动时若沿用竖屏尺寸，遮罩只能盖住一半屏幕
@@ -77,17 +80,34 @@ fun showNightScreen() {
             // 但进程刚启动时服务绑定需要几百毫秒，此刻就判定「坏了」并弹提示属于误报；
             // 而且重写无障碍列表会让所有无障碍服务一起重绑，更是误伤。
             // 所以这里先静默等一会儿：服务自己连上的话，onServiceConnected 会把遮罩挂上。
-            Log.i(TAG, "遮罩视图尚未挂载，稍后复查无障碍服务")
+            NSLog.i(TAG, "遮罩视图尚未挂载，稍后复查无障碍服务")
             scheduleConnectionCheck()
         }
         if (getLowestScreenBrightness() && !getActualLowestScreenBrightness()) {
             applyScreenBrightness(true)
         }
         layerView.keepScreenOn = keepScreenOn
+        // 启动前台服务，把进程重要性抬高，避免息屏后被动被回收
+        startForegroundService()
         // 更新磁贴和通知栏都要走系统进程（发广播、建通知渠道、提交通知），
         // 同步做完会推迟遮罩的首次绘制，所以挪到遮罩画出来之后再补。
         Handler(Looper.getMainLooper()).post { publishRunningState() }
+        HealthMonitor.snapshot("遮罩开启")
+    } else {
+        NSLog.w(TAG, "缺少悬浮窗权限，无法开启遮罩")
     }
+}
+
+/**
+ * 启动前台服务。
+ *
+ * 失败不影响功能：遮罩本身由无障碍服务的窗口承载，前台服务只是提高存活概率，
+ * 所以这里吞掉异常并记录，绝不让它变成崩溃。
+ */
+private fun startForegroundService() {
+    runCatching { NightScreenForegroundService.start(appContext) }
+        .onSuccess { NSLog.i(TAG, "已启动前台服务") }
+        .onFailure { NSLog.w(TAG, "前台服务启动失败（功能不受影响，仅保活变弱）", it) }
 }
 
 private fun publishRunningState() {
@@ -98,8 +118,7 @@ private fun publishRunningState() {
     NightScreenReceiver.sendBroadcast(action = NightScreenReceiver.SHOW_NOTIFICATION_ACTION)
 }
 
-private const val CONNECTION_CHECK_DELAY_MS = 2000L
-private const val CONNECTION_VERIFY_DELAY_MS = 2500L
+private const val CONNECTION_CHECK_DELAY_MS = 2_000L
 
 private var connectionCheckScheduled = false
 
@@ -114,36 +133,49 @@ private fun scheduleConnectionCheck() {
     connectionCheckScheduled = true
     Handler(Looper.getMainLooper()).postDelayed({
         connectionCheckScheduled = false
-        if (isAccessibilityServiceConnected()) return@postDelayed
-        if (AccessibilityGuard.canRestore()) {
-            Log.i(TAG, "无障碍服务仍未连接，尝试自动恢复")
-            AccessibilityGuard.restore { verifyRestored() }
-        } else {
-            promptAccessibilityLost()
+        if (isAccessibilityServiceConnected()) {
+            NSLog.i(TAG, "无障碍服务已连接，无需处理")
+            return@postDelayed
         }
+        NSLog.w(TAG, "无障碍服务仍未连接，交由看护流程处理")
+        // 交给统一的看护逻辑：它会判断权限、节流、自愈并记录日志
+        HealthWatchdog.checkAndHeal("遮罩开启复查")
     }, CONNECTION_CHECK_DELAY_MS)
-}
-
-private fun verifyRestored() {
-    Handler(Looper.getMainLooper()).postDelayed({
-        if (!isAccessibilityServiceConnected()) promptAccessibilityLost()
-    }, CONNECTION_VERIFY_DELAY_MS)
-}
-
-/** 自愈也救不回来才打扰用户：说明这次真的需要他手动关开一次。 */
-private fun promptAccessibilityLost() {
-    Log.w(TAG, "无障碍服务仍未连接，引导用户手动关开")
-    appContext.getString(R.string.accessibility_service_not_running).showToast()
-    AccessibilityGuard.openAccessibilitySettings()
 }
 
 fun closeNightScreen() {
     if (!showNightScreenLayer) return
+    NSLog.i(TAG, "关闭夜屏遮罩（用户主动）")
     showNightScreenLayer = false
     nightScreenRequested = false
+    HealthWatchdog.resetThrottle()
+    teardownUi()
+    HealthMonitor.snapshot("遮罩关闭")
+}
+
+/**
+ * 只撤下界面表现，**保留**「期望状态」。
+ *
+ * 用于「系统主动解绑无障碍服务」的场景（ROM 回收、自愈重写设置、用户换设备等）。
+ * 这类情况下用户并没有说要关掉夜屏，如果把期望状态一并清掉，
+ * 服务重新连上时就不会再自动恢复遮罩——而且自愈本身就靠重写设置实现，
+ * 重写必然触发一次解绑，等于自愈一次就把自己的状态清空了，
+ * 表现为「第一次能自愈，之后再也恢复不了」。
+ */
+fun detachNightScreenUi() {
+    if (!showNightScreenLayer) return
+    NSLog.i(TAG, "系统解绑无障碍服务，仅撤下遮罩并保留期望状态")
+    showNightScreenLayer = false
+    teardownUi()
+    HealthMonitor.snapshot("服务解绑撤下遮罩")
+}
+
+private fun teardownUi() {
     closeDialog()
     layerView.gone()
     applyScreenBrightness(false)
+    // 遮罩不在时不占着前台服务，避免留下长期挂着的通知
+    runCatching { NightScreenForegroundService.stop(appContext) }
     appContext.sendBroadcast(
         Intent(NightScreenService.ACTION_INACTIVE_TILE)
             .setPackage(appContext.packageName)
@@ -227,7 +259,7 @@ private fun systemInt(key: String, default: Int): Int =
 
 private fun systemPutInt(key: String, value: Int) {
     runCatching { Settings.System.putInt(appContext.contentResolver, key, value) }
-        .onFailure { Log.w(TAG, "写入系统设置失败: $key", it) }
+        .onFailure { NSLog.w(TAG, "写入系统设置失败: $key", it) }
 }
 
 private var originBrightness: Int = systemInt(Settings.System.SCREEN_BRIGHTNESS, -1)
@@ -262,6 +294,7 @@ fun applyScreenBrightness(value: Boolean) {
         // 只有读到有效值才覆盖原始值，避免把 -1 写回去
         if (current >= 0) originBrightness = current
         originBrightnessMode = currentMode
+        NSLog.i(TAG, "降低系统亮度: $current -> 0, mode=$currentMode -> MANUAL")
         systemPutInt(Settings.System.SCREEN_BRIGHTNESS, 0)
         systemPutInt(
             Settings.System.SCREEN_BRIGHTNESS_MODE,
@@ -269,6 +302,7 @@ fun applyScreenBrightness(value: Boolean) {
         )
     } else {
         if (systemInt(Settings.System.SCREEN_BRIGHTNESS, -1) == 0 && originBrightness >= 0) {
+            NSLog.i(TAG, "恢复系统亮度: 0 -> $originBrightness")
             systemPutInt(Settings.System.SCREEN_BRIGHTNESS, originBrightness)
         }
         if (systemInt(

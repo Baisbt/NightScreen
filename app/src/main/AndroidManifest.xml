@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.NOTIFICATION_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
@@ -67,6 +70,20 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibilityservice" />
+        </service>
+
+        <!--
+            前台服务：把本进程的重要性从 CACHED(400) 抬到 FOREGROUND_SERVICE(125)，
+            显著降低「息屏几分钟就被 ROM 的 single-cleaner 杀掉」的概率。
+            服务本身不提供任何界面，只在遮罩开启期间存在，遮罩关闭即 stopSelf。
+        -->
+        <service
+            android:name=".ui.service.NightScreenForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the eye-care overlay alive while the screen is dimmed" />
         </service>
 
         <receiver

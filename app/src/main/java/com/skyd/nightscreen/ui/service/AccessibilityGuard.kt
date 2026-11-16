@@ -67,6 +67,8 @@ object AccessibilityGuard {
         val cr = appContext.contentResolver
         val withoutSelf = readEnabledServices().filter { it != serviceName }
 
+        Log.i(TAG, "开始自愈：临时移除本服务条目，稍后写回")
+
         runCatching {
             Settings.Secure.putString(
                 cr,
@@ -83,6 +85,7 @@ object AccessibilityGuard {
                     (withoutSelf + serviceName).joinToString(":")
                 )
                 Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+                Log.i(TAG, "自愈写入完成，等待系统重新绑定")
             }.onFailure { Log.e(TAG, "写回无障碍服务条目失败", it) }
             onDone()
         }, RESTORE_DELAY_MS)

@@ -2,7 +2,6 @@ package com.skyd.nightscreen.ui.activity
 
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -10,22 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navDeepLink
-import com.skyd.nightscreen.R
-import com.skyd.nightscreen.ext.editor
+import com.skyd.nightscreen.ext.AccessibilityPermission
+import com.skyd.nightscreen.ext.openAccessibilitySettings
 import com.skyd.nightscreen.ext.requestAllPermissionsAndShow
-import com.skyd.nightscreen.ext.requestSystemAlertWindowPermission
 import com.skyd.nightscreen.ext.sharedPreferences
+import com.skyd.nightscreen.log.HealthMonitor
+import com.skyd.nightscreen.log.NSLog
 import com.skyd.nightscreen.ui.NightScreenReceiver
 import com.skyd.nightscreen.ui.component.autoNightScreenOnLaunch
 import com.skyd.nightscreen.ui.component.showDialogAndNightScreen
@@ -34,7 +29,6 @@ import com.skyd.nightscreen.ui.component.showToast
 import com.skyd.nightscreen.ui.local.LocalNavController
 import com.skyd.nightscreen.ui.screen.about.ABOUT_SCREEN_ROUTE
 import com.skyd.nightscreen.ui.screen.about.AboutScreen
-import com.skyd.nightscreen.ui.screen.about.SponsorDialog
 import com.skyd.nightscreen.ui.screen.home.HOME_SCREEN_ROUTE
 import com.skyd.nightscreen.ui.screen.home.HomeScreen
 import com.skyd.nightscreen.ui.screen.license.LICENSE_SCREEN_ROUTE
@@ -48,29 +42,18 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : BaseComposeActivity() {
-    companion object {
-        const val REQUEST_PERMISSION_AND_SHOW_ACTION = "requestPermissionsAndShow"
 
-        /** 等首页首帧画出来再自动开遮罩，避免遮罩抢在界面前面出现。 */
-        private const val AUTO_START_DELAY_MS = 250L
-    }
+    private lateinit var navController: androidx.navigation.NavController
 
-    private lateinit var navController: NavController
-    private var launchTimes: Int = -1
+    /** 只在本次 Activity 生命周期内申请一次，避免旋转/重组时反复跳系统设置页。 */
+    private var permissionRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
-
         super.onCreate(savedInstanceState)
-
-        if (launchTimes == -1) {
-            launchTimes = sharedPreferences().getInt("launchTimes", 0) + 1
-            sharedPreferences().editor { putInt("launchTimes", launchTimes % 20) }
-        }
 
         setContent {
             val navController = rememberNavController()
-            var openSponsorDialog by rememberSaveable { mutableStateOf(launchTimes == 20) }
             CompositionLocalProvider(LocalNavController provides navController) {
                 this.navController = navController
                 NightScreenTheme {
@@ -97,16 +80,10 @@ class MainActivity : BaseComposeActivity() {
                             LicenseScreen()
                         }
                     }
-
-                    SponsorDialog(
-                        visible = openSponsorDialog,
-                        onClose = { openSponsorDialog = false }
-                    )
                 }
                 // 必须放在 LaunchedEffect 里只跑一次。
                 // 直接写在 setContent 的 lambda 里会在每次重组时执行，
-                // 于是权限申请、页面跳转会被反复触发（叠几十个权限弹窗），
-                // onNewIntent 那条路径仍然走自己的调用。
+                // 于是权限申请、页面跳转会被反复触发（叠几十个权限弹窗）。
                 LaunchedEffect(Unit) {
                     doIntentAction(intent?.action)
                 }
@@ -122,59 +99,93 @@ class MainActivity : BaseComposeActivity() {
     override fun onResume() {
         super.onResume()
         autoStartNightScreenIfNeeded()
+        HealthMonitor.snapshot("回到前台")
     }
 
     /**
      * 「启动时自动开启」：回到前台时如果遮罩还没开，就自动打开。
      *
-     * 延后一点再执行，是为了让首页先画出来：冷启动时如果和首帧同步跑，
-     * 用户会看到遮罩先盖上来、界面后出现，像闪了一下。
-     * 已经在开启状态时不重复执行，所以在应用内来回切页不会反复触发。
+     * 这里不再等待、也不再申请无障碍权限——授权是持久化的系统设置，
+     * 已经开启过的用户在 [AccessibilityPermission.isEnabledInSystem] 里会直接命中，
+     * 只需要等系统把服务绑定好（通常几百毫秒，由服务自身的 onServiceConnected 完成）。
+     *
+     * 只有真的没授权时才引导用户去系统设置页，而且每个 Activity 生命周期只引导一次。
      */
     private fun autoStartNightScreenIfNeeded() {
         if (!autoNightScreenOnLaunch) return
         if (showNightScreenLayer) return
-        if (!isAccessibilityServiceRunning(this)) return
-        window.decorView.postDelayed({
-            if (!autoNightScreenOnLaunch) return@postDelayed
-            if (showNightScreenLayer) return@postDelayed
-            if (!isAccessibilityServiceRunning(this)) return@postDelayed
-            showDialogAndNightScreen()
-        }, AUTO_START_DELAY_MS)
+
+        if (AccessibilityPermission.isEnabledInSystem(this)) {
+            // 已授权：直接等首帧后开遮罩，不做任何跳转
+            window.decorView.post {
+                if (!autoNightScreenOnLaunch) return@post
+                if (showNightScreenLayer) return@post
+                showDialogAndNightScreen()
+            }
+        } else {
+            NSLog.w("MainActivity", "自动开启被跳过：无障碍权限不可用")
+            if (!permissionRequested &&
+                !AccessibilityPermission.hasGrantedOnce(this) &&
+                autoNightScreenOnLaunch
+            ) {
+                // 首次安装才会走到这里：引导去授权，避免用户以为是「每次都要等」
+                requestPermission()
+            }
+        }
     }
 
-    private fun doIntentAction(action: String?) {
-        action ?: return
-        if (action == REQUEST_PERMISSION_AND_SHOW_ACTION) {
-            requestPermission()
-        } else if (action == SETTINGS_SCREEN_ROUTE) {
-            navController.navigate(SETTINGS_SCREEN_ROUTE) {
-                launchSingleTop = true
-                restoreState = true
-            }
+    /**
+     * 把「需要用户去系统设置里打开无障碍」这件事收敛成一次。
+     *
+     * 老实现无论是否已授权都会跳系统设置页，而且每次 onResume 都可能跳，
+     * 用户感受到的就是「每次打开 App 都要等 3~7 秒」。
+     */
+    private fun requestPermission() {
+        if (permissionRequested) return
+        permissionRequested = true
+        NSLog.i("MainActivity", "引导用户开启无障碍服务")
+
+        if (isAccessibilityServiceRunning(this)) {
+            requestAllPermissionsAndShow()
+        } else {
+            openAccessibilitySettings()
         }
     }
 
     private val startForResult = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        if (isAccessibilityServiceRunning(this)) {
+        // 从系统设置页返回：这里只做「用户是否真的把它打开了」的确认，
+        // 不再重复弹权限申请。
+        if (AccessibilityPermission.isEnabledInSystem(this)) {
+            AccessibilityPermission.markGranted(this)
+            NSLog.i("MainActivity", "用户已开启无障碍服务")
             requestAllPermissionsAndShow()
         } else {
-            getString(R.string.no_accessibility_permission).showToast()
+            NSLog.w("MainActivity", "用户从无障碍设置返回，但服务仍未启用")
+            getString(com.skyd.nightscreen.R.string.no_accessibility_permission).showToast()
         }
     }
 
-    private fun requestPermission() {
-        requestSystemAlertWindowPermission(onGranted = {
-            if (isAccessibilityServiceRunning(this)) {
-                NightScreenReceiver.sendBroadcast(
-                    context = this,
-                    action = NightScreenReceiver.SHOW_DIALOG_AND_NIGHT_SCREEN_ACTION
-                )
-            } else {
-                startForResult.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    private fun doIntentAction(action: String?) {
+        action ?: return
+        when (action) {
+            REQUEST_PERMISSION_AND_SHOW_ACTION -> {
+                requestPermission()
             }
-        })
+
+            SETTINGS_SCREEN_ROUTE -> {
+                if (::navController.isInitialized) {
+                    navController.navigate(SETTINGS_SCREEN_ROUTE) {
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            }
+        }
+    }
+
+    companion object {
+        const val REQUEST_PERMISSION_AND_SHOW_ACTION = "requestPermissionsAndShow"
     }
 }
